@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: Kafka Message Service API
+  version: 1.0.0
+
+paths:
+  /messages:
+    post:
+      summary: Publish a JSON message to Kafka (Avro-serialized, synchronous)
+      parameters:
+        - name: topic
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Target Kafka topic name
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Message key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Arbitrary JSON payload to serialize to Avro and send
+      responses:
+        '200':
+          description: Message successfully published and acknowledged by Kafka
+        '400':
+          description: Validation failed (per topic rules)
+        '500':
+          description: Server error (e.g. Kafka unavailable or serialization error)
+
+  /topics/{topic}/rules:
+    post:
+      summary: Add a validation rule for a topic
+      parameters:
+        - name: topic
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Kafka topic name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/InValidation'
+                - $ref: '#/components/schemas/RegexValidation'
+                - $ref: '#/components/schemas/RangeValidation'
+              discriminator:
+                propertyName: type
+                mapping:
+                  in: '#/components/schemas/InValidation'
+                  regex: '#/components/schemas/RegexValidation'
+                  range: '#/components/schemas/RangeValidation'
+      responses:
+        '204':
+          description: Rule accepted
+        '400':
+          description: Invalid rule or schema violation
+
+components:
+  schemas:
+    BaseValidation:
+      type: object
+      required:
+        - type
+        - field
+      properties:
+        type:
+          type: string
+          description: Discriminator for rule subtype
+        field:
+          type: string
+          description: JSON path (dot-notation) to the field
+
+    InValidation:
+      allOf:
+        - $ref: '#/components/schemas/BaseValidation'
+        - type: object
+          required:
+            - values
+          properties:
+            type:
+              enum: [in]
+            values:
+              type: array
+              items:
+                type: string
+              minItems: 1
+
+    RegexValidation:
+      allOf:
+        - $ref: '#/components/schemas/BaseValidation'
+        - type: object
+          required:
+            - pattern
+          properties:
+            type:
+              enum: [regex]
+            pattern:
+              type: string
+              description: Java-style regex
+
+    RangeValidation:
+      allOf:
+        - $ref: '#/components/schemas/BaseValidation'
+        - type: object
+          required:
+            - min
+            - max
+          properties:
+            type:
+              enum: [range]
+            min:
+              type: number
+            max:
+              type: number
